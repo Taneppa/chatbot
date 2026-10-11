@@ -2,64 +2,68 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# Show title and description.
-st.title("💬 Gemini Chatbot")
+# アプリのタイトルと説明
+st.title("💬 Gemini Chatbot (with Web Search)")
 st.write(
-    "This is a simple chatbot that uses Google's Gemini model to generate responses. "
-    "To use this app, you need to provide a Gemini API key, which you can get [here](https://aistudio.google.com/app/apikey). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+    "GoogleのGeminiモデルを利用したチャットボットです。"
+    "Google検索機能が有効になっており、最新の情報に基づいた回答が可能です。"
 )
 
-# Ask user for their Gemini API key via `st.text_input`.
-gemini_api_key = st.text_input("Gemini API Key", type="password")
-if not gemini_api_key:
-    st.info("Please add your Gemini API key to continue.", icon="🗝️")
-else:
+# SecretsからAPIキーを安全に取得（画面の入力欄は廃止）
+try:
+    gemini_api_key = st.secrets["GEMINI_API_KEY"]
+except KeyError:
+    st.error("APIキーが設定されていません。StreamlitのSecrets設定を確認してください。")
+    st.stop() # キーがない場合はここで処理を停止
 
-    # Create a Gemini client.
-    client = genai.Client(api_key=gemini_api_key)
+# Geminiクライアントの初期化
+client = genai.Client(api_key=gemini_api_key)
 
-    # Create a session state variable to store the chat messages.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+# チャット履歴を保持するセッションステートの初期化
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# 既存のチャット履歴を画面に表示
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    # Create a chat input field to allow the user to enter a message.
-    if prompt := st.chat_input("What is up?"):
+# ユーザーからのメッセージ入力
+if prompt := st.chat_input("何でも聞いてください"):
 
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    # ユーザーの入力を履歴に追加し、画面に表示
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        # Gemini API用の履歴フォーマットに変換 (assistant -> model)
-        formatted_contents = []
-        for m in st.session_state.messages:
-            role = "user" if m["role"] == "user" else "model"
-            formatted_contents.append(
-                types.Content(
-                    role=role,
-                    parts=[types.Part.from_text(text=m["content"])]
-                )
+    # Gemini API用の履歴フォーマットに変換 (Streamlitの'assistant'をGeminiの'model'に変換)
+    formatted_contents = []
+    for m in st.session_state.messages:
+        role = "user" if m["role"] == "user" else "model"
+        formatted_contents.append(
+            types.Content(
+                role=role,
+                parts=[types.Part.from_text(text=m["content"])]
             )
-
-        # Generate a response stream using the Gemini API (最新モデルを指定)
-        response_stream = client.models.generate_content_stream(
-            model="gemini-3.8-flash",
-            contents=formatted_contents,
         )
 
-        # st.write_stream 用のジェネレータ関数
-        def stream_generator():
-            for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+    # Gemini APIを呼び出し、ストリーミングで応答を生成
+    # （最新モデル gemini-3.8-flash を指定し、Google検索ツールを有効化）
+    response_stream = client.models.generate_content_stream(
+        model="gemini-3.8-flash",
+        contents=formatted_contents,
+        config=types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        )
+    )
 
-        # Stream the response to the chat using `st.write_stream`, then store it in session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream_generator)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+    # st.write_streamでチャンクを逐次処理するためのジェネレータ関数
+    def stream_generator():
+        for chunk in response_stream:
+            if chunk.text:
+                yield chunk.text
+
+    # ストリーミング応答をUIに表示し、完了後に履歴に保存
+    with st.chat_message("assistant"):
+        response = st.write_stream(stream_generator)
+    st.session_state.messages.
