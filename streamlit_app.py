@@ -9,12 +9,12 @@ st.write(
     "Google検索機能が有効になっており、最新の情報に基づいた回答が可能です。"
 )
 
-# SecretsからAPIキーを安全に取得（画面の入力欄は廃止）
+# SecretsからAPIキーを安全に取得
 try:
     gemini_api_key = st.secrets["GEMINI_API_KEY"]
 except KeyError:
     st.error("APIキーが設定されていません。StreamlitのSecrets設定を確認してください。")
-    st.stop() # キーがない場合はここで処理を停止
+    st.stop()
 
 # Geminiクライアントの初期化
 client = genai.Client(api_key=gemini_api_key)
@@ -48,7 +48,6 @@ if prompt := st.chat_input("何でも聞いてください"):
         )
 
     # Gemini APIを呼び出し、ストリーミングで応答を生成
-    # （最新モデル gemini-3.8-flash を指定し、Google検索ツールを有効化）
     response_stream = client.models.generate_content_stream(
         model="gemini-3.8-flash",
         contents=formatted_contents,
@@ -57,7 +56,7 @@ if prompt := st.chat_input("何でも聞いてください"):
         )
     )
 
-    # st.write_streamでチャンクを逐次処理するためのジェネレータ関数
+    # st.write_stream用のジェネレータ関数
     def stream_generator():
         for chunk in response_stream:
             if chunk.text:
@@ -66,7 +65,4 @@ if prompt := st.chat_input("何でも聞いてください"):
     # ストリーミング応答をUIに表示し、完了後に履歴に保存
     with st.chat_message("assistant"):
         response = st.write_stream(stream_generator)
-  # ストリーミング応答をUIに表示し、完了後に履歴に保存
-with st.chat_message("assistant"):
-    response = st.write_stream(stream_generator)
-st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": response})
