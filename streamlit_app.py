@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -34,7 +35,7 @@ if prompt := st.chat_input("何でも聞いてください"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Gemini API用の履歴フォーマットに変換
+    # Gemini API用の履歴フォーマットに変換 (Streamlitの'assistant'をGeminiの'model'に変換)
     formatted_contents = []
     for m in st.session_state.messages:
         role = "user" if m["role"] == "user" else "model"
@@ -45,32 +46,46 @@ if prompt := st.chat_input("何でも聞いてください"):
             )
         )
 
-    # ストリーム生成関数
+    # 503(サーバー過負荷)・429(レート制限) エラー対策付きストリーム生成関数
     def stream_generator():
-        try:
-            # 最新モデル gemini-3.8-flash を指定（429回避のため検索ツールは削除）
-            response_stream = client.models.generate_content_stream(
-                model="gemini-3.8-flash",
-                contents=formatted_contents,
-            )
-            for chunk in response_stream:
-                if chunk.text:
-                    yield chunk.text
+        max_retries = 3
+        delay = 2  # 初回待機時間（秒）
 
-        except errors.ClientError as e:
-            if "429" in str(e):
-                yield (
-                    "⚠️ **APIの利用制限（429 Quota Exceeded）に達しました。**\n\n"
-                    "1分間あたりのリクエスト数またはトークン数の上限を超えました。1〜2分ほど時間を置いてから再度お試しください。"
+        for attempt in range(max_retries):
+            try:
+                response_stream = client.models.generate_content_stream(
+                    model="gemini-3.8-flash",
+                    contents=formatted_contents,
                 )
-            else:
-                yield f"**エラーが発生しました:** {e}"
-        except Exception as e:
-            yield f"**予期せぬエラーが発生しました:** {e}"
+                for chunk in response_stream:
+                    if chunk.text:
+                        yield chunk.text
+                return  # 正常応答が終わったら処理完了
+
+            except errors.APIError as e:
+                err_str = str(e)
+                # 503 (サーバー混雑) の場合は時間を置いて自動リトライ
+                if "503" in err_str:
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                        delay *= 2  # 待機時間を段階的に増やす (2秒 -> 4秒)
+                        continue
+                    else:
+                        yield "⚠️ Googleのサーバーが現在高負荷状態です（503エラー）。1〜2分ほど時間を置いてから再度お試しください。"
+                        return
+                # 429 (利用制限超過) の場合
+                elif "429" in err_str:
+                    yield "⚠️ APIの利用制限（429 Quota Exceeded）に達しました。1分ほど時間を置いてお試しください。"
+                    return
+                else:
+                    yield f"**APIエラーが発生しました:** {e}"
+                    return
+            except Exception as e:
+                yield f"**予期せぬエラーが発生しました:** {e}"
+                return
 
     # ストリーミング応答をUIに表示し、完了後に履歴に保存
     with st.chat_message("assistant"):
         response = st.write_stream(stream_generator)
     
-    st.session_state.messages.append({"role": "assistant", "content": response})
-    
+    st.session_state.messages.append({"role":
