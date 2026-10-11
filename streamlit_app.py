@@ -66,4 +66,7 @@ if prompt := st.chat_input("何でも聞いてください"):
     # ストリーミング応答をUIに表示し、完了後に履歴に保存
     with st.chat_message("assistant"):
         response = st.write_stream(stream_generator)
-    st.session_state.messages.
+  # ストリーミング応答をUIに表示し、完了後に履歴に保存
+with st.chat_message("assistant"):
+    response = st.write_stream(stream_generator)
+st.session_state.messages.append({"role": "assistant", "content": response})
