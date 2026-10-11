@@ -48,9 +48,9 @@ if prompt := st.chat_input("何でも聞いてください"):
     # ストリーム生成関数
     def stream_generator():
         try:
-            # 429回避のためGoogle検索ツールは外し、標準モデル呼び出しに変更
+            # 最新モデル gemini-3.8-flash を指定（429回避のため検索ツールは削除）
             response_stream = client.models.generate_content_stream(
-                model="gemini-2.0-flash",
+                model="gemini-3.8-flash",
                 contents=formatted_contents,
             )
             for chunk in response_stream:
@@ -61,7 +61,7 @@ if prompt := st.chat_input("何でも聞いてください"):
             if "429" in str(e):
                 yield (
                     "⚠️ **APIの利用制限（429 Quota Exceeded）に達しました。**\n\n"
-                    "数分待ってから再度送信してください。無料枠の1分間あたりのリクエスト上限を超えています。"
+                    "1分間あたりのリクエスト数またはトークン数の上限を超えました。1〜2分ほど時間を置いてから再度お試しください。"
                 )
             else:
                 yield f"**エラーが発生しました:** {e}"
@@ -73,3 +73,4 @@ if prompt := st.chat_input("何でも聞いてください"):
         response = st.write_stream(stream_generator)
     
     st.session_state.messages.append({"role": "assistant", "content": response})
+    
